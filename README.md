@@ -50,6 +50,20 @@ This repository contains a Jenkins pipeline designed to automate secure log inge
 ### 6. **Fail-Fast Security Gate**
 - Pipeline is aborted if any scanner detects high-risk issues.
 
+- ### Configuring DAST Tools
+This pipeline supports DASTardly and OWASP ZAP for dynamic security testing. To enable these scans:
+1. **Set Up DASTardly**:
+   - Deploy a DASTardly server and note its URL (replace `<your-dast-server-url>`).
+   - Store credentials in Vault at `secret/dastardly` with keys `username` and `token`.
+   - Set `RUN_DAST` to `true` when triggering the pipeline.
+2. **Set Up ZAP**:
+   - Install ZAP and expose it at `http://<your-zap-server-ip>:8080`.
+   - Generate an API key and store it in Vault at `secret/zap` with key `token`.
+   - Ensure `zap-cli` is installed on the Jenkins agent.
+3. **Dependencies**:
+   - Install `curl` (for DASTardly) and `zap-cli` (for ZAP) on the Jenkins agent.
+   - Test connectivity to both servers before running the pipeline.
+
 ---
 
 ## 🛠️ Prerequisites
