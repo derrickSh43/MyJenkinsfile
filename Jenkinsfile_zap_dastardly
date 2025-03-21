@@ -16,6 +16,11 @@ pipeline {
         JFROG_CLI_BUILD_NUMBER = "${BUILD_NUMBER}"  // Jenkins variable, safe to keep
     }
 
+    parameters {
+        string(name: 'VERSION', defaultValue: '1.0.0', description: 'Artifact version')
+        booleanParam(name: 'RUN_DAST', defaultValue: false, description: 'Run DASTardly scan')
+    }
+
     stages {
         stage('Fetch Vault Credentials') {
             steps {
@@ -96,6 +101,12 @@ pipeline {
             }
         }
 
+        stage('Security Scans') {
+            parallel {
+                stage('SonarQube') { ... }
+                stage('Snyk') { ... }
+            }
+        }
         stage('Static Code Analysis (SonarQube)') {
             steps {
                 script {
@@ -231,76 +242,76 @@ pipeline {
             }
         }
 
-        // stage('DASTardly Scan') {
-        //     steps {
-        //         script {
-        //             def dastStatus = sh(script: """
-        //                 set +x
-        //                 curl -s -X POST "https://<your-dast-server-url>/scan" \\
-        //                 -u "${DAST_USERNAME}:${DAST_TOKEN}" \\
-        //                 -H "Content-Type: application/json" \\
-        //                 -d '{"target": "https://<your-app-url>"}' > dast-results.json 2>&1
-        //             """, returnStatus: true)
+         stage('DASTardly Scan') {
+             steps {
+                 script {
+                     def dastStatus = sh(script: """
+                         set +x
+                         curl -s -X POST "https://<your-dast-server-url>/scan" \\
+                         -u "${DAST_USERNAME}:${DAST_TOKEN}" \\
+                         -H "Content-Type: application/json" \\
+                         -d '{"target": "https://<your-app-url>"}' > dast-results.json 2>&1
+                     """, returnStatus: true)
 
-        //             def dastOutput = readFile('dast-results.json').trim()
-        //             if (dastStatus != 0 || (dastOutput && !dastOutput.startsWith('{'))) {
-        //                 echo "DASTardly scan failed or produced invalid JSON"
-        //                 if (dastOutput) {
-        //                     echo "DAST output: ${dastOutput}"
-        //                 }
-        //                 env.SCAN_FAILED = "true"
-        //             } else {
-        //                 def dastIssues = readJSON(file: "dast-results.json").vulnerabilities ?: []
-        //                 if (dastIssues.size() > 0) {
-        //                     def issueDetails = dastIssues.collect { issue ->
-        //                         "Issue: ${issue.title}\\nSeverity: ${issue.severity}\\nDescription: ${issue.description}\\nURL: ${issue.url ?: 'N/A'}"
-        //                     }.join('\\n\\n')
-        //                     echo "DASTardly vulnerabilities found - creating JIRA ticket"
-        //                     createJiraTicket("DASTardly Security Vulnerabilities Detected", issueDetails)
-        //                     env.SCAN_FAILED = "true"
-        //                 } else {
-        //                     echo "No DASTardly vulnerabilities detected"
-        //                 }
-        //             }
-        //             sh "rm -f dast-results.json"
-        //         }
-        //     }
-        // }
+                     def dastOutput = readFile('dast-results.json').trim()
+                     if (dastStatus != 0 || (dastOutput && !dastOutput.startsWith('{'))) {
+                         echo "DASTardly scan failed or produced invalid JSON"
+                         if (dastOutput) {
+                             echo "DAST output: ${dastOutput}"
+                         }
+                         env.SCAN_FAILED = "true"
+                     } else {
+                         def dastIssues = readJSON(file: "dast-results.json").vulnerabilities ?: []
+                         if (dastIssues.size() > 0) {
+                             def issueDetails = dastIssues.collect { issue ->
+                                 "Issue: ${issue.title}\\nSeverity: ${issue.severity}\\nDescription: ${issue.description}\\nURL: ${issue.url ?: 'N/A'}"
+                             }.join('\\n\\n')
+                             echo "DASTardly vulnerabilities found - creating JIRA ticket"
+                             createJiraTicket("DASTardly Security Vulnerabilities Detected", issueDetails)
+                             env.SCAN_FAILED = "true"
+                         } else {
+                             echo "No DASTardly vulnerabilities detected"
+                         }
+                     }
+                     sh "rm -f dast-results.json"
+                 }
+             }
+         }
 
-        // stage('ZAP Scan') {
-        //     steps {
-        //         script {
-        //             def zapStatus = sh(script: """
-        //                 set +x
-        //                 zap-cli --zap-url http://<your-zap-server-ip>:8080 \\
-        //                 --api-key "${ZAP_TOKEN}" \\
-        //                 quick-scan -f json -o zap-results.json "https://<your-app-url>" 2>&1
-        //             """, returnStatus: true)
+         stage('ZAP Scan') {
+             steps {
+                 script {
+                     def zapStatus = sh(script: """
+                         set +x
+                         zap-cli --zap-url http://<your-zap-server-ip>:8080 \\
+                         --api-key "${ZAP_TOKEN}" \\
+                         quick-scan -f json -o zap-results.json "https://<your-app-url>" 2>&1
+                     """, returnStatus: true)
 
-        //             def zapOutput = readFile('zap-results.json').trim()
-        //             if (zapStatus != 0 || (zapOutput && !zapOutput.startsWith('['))) {
-        //                 echo "ZAP scan failed or produced invalid JSON"
-        //                 if (zapOutput) {
-        //                     echo "ZAP output: ${zapOutput}"
-        //                 }
-        //                 env.SCAN_FAILED = "true"
-        //             } else {
-        //                 def zapIssues = readJSON(file: "zap-results.json")
-        //                 if (zapIssues.size() > 0) {
-        //                     def issueDetails = zapIssues.collect { issue ->
-        //                         "Issue: ${issue.name}\\nRisk: ${issue.risk}\\nDescription: ${issue.description}\\nURI: ${issue.uri ?: 'N/A'}"
-        //                     }.join('\\n\\n')
-        //                     echo "ZAP vulnerabilities found - creating JIRA ticket"
-        //                     createJiraTicket("ZAP Security Vulnerabilities Detected", issueDetails)
-        //                     env.SCAN_FAILED = "true"
-        //                 } else {
-        //                     echo "No ZAP vulnerabilities detected"
-        //                 }
-        //             }
-        //             sh "rm -f zap-results.json"
-        //         }
-        //     }
-        // }
+                     def zapOutput = readFile('zap-results.json').trim()
+                     if (zapStatus != 0 || (zapOutput && !zapOutput.startsWith('['))) {
+                         echo "ZAP scan failed or produced invalid JSON"
+                         if (zapOutput) {
+                             echo "ZAP output: ${zapOutput}"
+                         }
+                         env.SCAN_FAILED = "true"
+                     } else {
+                         def zapIssues = readJSON(file: "zap-results.json")
+                         if (zapIssues.size() > 0) {
+                             def issueDetails = zapIssues.collect { issue ->
+                                 "Issue: ${issue.name}\\nRisk: ${issue.risk}\\nDescription: ${issue.description}\\nURI: ${issue.uri ?: 'N/A'}"
+                             }.join('\\n\\n')
+                             echo "ZAP vulnerabilities found - creating JIRA ticket"
+                             createJiraTicket("ZAP Security Vulnerabilities Detected", issueDetails)
+                             env.SCAN_FAILED = "true"
+                         } else {
+                             echo "No ZAP vulnerabilities detected"
+                         }
+                     }
+                     sh "rm -f zap-results.json"
+                 }
+             }
+         }
 
         stage('Fail Pipeline if Scans Fail') {
             steps {
@@ -312,6 +323,100 @@ pipeline {
             }
         }
     }
+
+        stage('Generate Security Report') {
+            steps {
+                script {
+                    // Initialize report data
+                    def reportData = [
+                        sonarQube: [],
+                        snyk: [],
+                        xray: [],
+                        dastardly: [],
+                        zap: []
+                    ]
+        
+                    // Collect SonarQube results (if available)
+                    if (fileExists('sonar-issues.json')) {
+                        def sonarIssues = readJSON(file: 'sonar-issues.json') ?: []
+                        reportData.sonarQube = sonarIssues.collect { issue ->
+                            [message: issue.message, file: issue.component, line: issue.line ?: 'N/A']
+                        }
+                    }
+        
+                    // Collect Snyk results
+                    if (fileExists('snyk-results.json')) {
+                        def snykIssues = readJSON(file: 'snyk-results.json').infrastructureAsCodeIssues ?: []
+                        reportData.snyk = snykIssues.collect { issue ->
+                            [title: issue.title, severity: issue.severity, file: issue.filePath ?: 'N/A']
+                        }
+                    }
+        
+                    // Collect Xray results
+                    if (fileExists('xray-scan.json')) {
+                        def xrayIssues = readJSON(file: 'xray-scan.json').violations ?: []
+                        reportData.xray = xrayIssues.collect { issue ->
+                            [summary: issue.summary, severity: issue.severity, cve: issue.cve ?: 'N/A']
+                        }
+                    }
+        
+                    // Collect DASTardly results
+                    if (fileExists('dast-results.json')) {
+                        def dastIssues = readJSON(file: 'dast-results.json').vulnerabilities ?: []
+                        reportData.dastardly = dastIssues.collect { issue ->
+                            [title: issue.title, severity: issue.severity, url: issue.url ?: 'N/A']
+                        }
+                    }
+        
+                    // Collect ZAP results
+                    if (fileExists('zap-results.json')) {
+                        def zapIssues = readJSON(file: 'zap-results.json') ?: []
+                        reportData.zap = zapIssues.collect { issue ->
+                            [name: issue.name, risk: issue.risk, uri: issue.uri ?: 'N/A']
+                        }
+                    }
+        
+                    // Generate HTML report
+                    def htmlContent = """
+                    <html>
+                    <head><title>Security Scan Report</title><style>table {border-collapse: collapse;} th, td {border: 1px solid black; padding: 5px;}</style></head>
+                    <body>
+                    <h1>Security Scan Report</h1>
+                    <h2>SonarQube Issues (${reportData.sonarQube.size()})</h2>
+                    <table>
+                        <tr><th>Message</th><th>File</th><th>Line</th></tr>
+                        ${reportData.sonarQube.collect { "<tr><td>${it.message}</td><td>${it.file}</td><td>${it.line}</td></tr>" }.join('\n')}
+                    </table>
+                    <h2>Snyk Issues (${reportData.snyk.size()})</h2>
+                    <table>
+                        <tr><th>Title</th><th>Severity</th><th>File</th></tr>
+                        ${reportData.snyk.collect { "<tr><td>${it.title}</td><td>${it.severity}</td><td>${it.file}</td></tr>" }.join('\n')}
+                    </table>
+                    <h2>JFrog Xray Issues (${reportData.xray.size()})</h2>
+                    <table>
+                        <tr><th>Summary</th><th>Severity</th><th>CVE</th></tr>
+                        ${reportData.xray.collect { "<tr><td>${it.summary}</td><td>${it.severity}</td><td>${it.cve}</td></tr>" }.join('\n')}
+                    </table>
+                    <h2>DASTardly Issues (${reportData.dastardly.size()})</h2>
+                    <table>
+                        <tr><th>Title</th><th>Severity</th><th>URL</th></tr>
+                        ${reportData.dastardly.collect { "<tr><td>${it.title}</td><td>${it.severity}</td><td>${it.url}</td></tr>" }.join('\n')}
+                    </table>
+                    <h2>ZAP Issues (${reportData.zap.size()})</h2>
+                    <table>
+                        <tr><th>Name</th><th>Risk</th><th>URI</th></tr>
+                        ${reportData.zap.collect { "<tr><td>${it.name}</td><td>${it.risk}</td><td>${it.uri}</td></tr>" }.join('\n')}
+                    </table>
+                    </body>
+                    </html>
+                    """
+        
+                    // Write and publish the report
+                    writeFile file: 'security-report.html', text: htmlContent
+                    archiveArtifacts artifacts: 'security-report.html', allowEmptyArchive: true
+                }
+            }
+        }
 
     post {
         success {
