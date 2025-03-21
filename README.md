@@ -1,75 +1,120 @@
-# Jenkins Secure CI/CD Pipeline with Vault, Snyk, SonarQube, and JFrog
+# Secure Log Ingestion and Analysis Pipeline (Jenkins + Vault + Lambda + JFrog)
 
-This Jenkins pipeline automates the CI/CD process with a strong emphasis on security and quality assurance. It integrates HashiCorp Vault, SonarQube, Snyk, JFrog Artifactory/Xray, and Jira to provide a full-stack DevSecOps workflow.
-
-## Features
-
-- **Secrets Management** via HashiCorp Vault (AppRole-based)
-- **Static Code Analysis** using SonarQube
-- **Infrastructure as Code (IaC) Scanning** with Snyk
-- **JFrog Artifactory** for artifact storage
-- **JFrog Xray** for binary vulnerability scanning
-- **Jira Integration** to automatically raise tickets for critical findings
-- **Optional DAST** scanning using DASTardly and OWASP ZAP (commented out)
-- **Fail-fast security gate** if critical vulnerabilities are detected
-
-## Pipeline Stages
-
-1. **Fetch Vault Credentials**: Retrieves static secrets from Vault for integrations (SonarQube, Jira, Snyk, etc.)
-2. **Fetch AWS STS Credentials**: Generates temporary AWS credentials via Vault for secure usage.
-3. **Checkout Code**: Pulls the latest code from GitHub.
-4. **Static Code Analysis (SonarQube)**: Scans code for vulnerabilities and optionally creates Jira tickets for blockers/critical issues.
-5. **Snyk Security Scan**: Scans IaC configurations for known security flaws.
-6. **Build Artifact**: Simulates building and packaging an artifact.
-7. **Upload to JFrog**: Uploads the built artifact to Artifactory.
-8. **JFrog Xray Scan**: Performs vulnerability analysis on the uploaded artifact.
-9. **Fail on Security Scan Issues**: Halts the pipeline if any scan reports critical issues.
-
-> Note: DASTardly and OWASP ZAP scans are included but commented out. You can enable them as needed.
-
-## Requirements
-
-- Jenkins with required plugins:
-  - [HashiCorp Vault Plugin](https://plugins.jenkins.io/hashicorp-vault-plugin/)
-  - Pipeline Utility Steps (`readJSON`, `writeFile`, etc.)
-  - Credentials Plugin
-- JFrog CLI, Snyk CLI, Sonar Scanner installed on agents
-- Vault configured with required secrets
-- Jira project with API access
-- Environment Variables set via Jenkins or vault secrets
-
-## Setup Instructions
-
-1. Replace placeholders like:
-   - `<your-sonarqube-url>`
-   - `<your-jira-site>`
-   - `<your-artifactory-url>`
-   - `<your-org>`, `<your-repo>`, `<your-project-key>`, etc.
-2. Ensure you have Jenkins credentials set up for:
-   - Vault AppRole login (`vault-role-id` and `vault-secret-id`)
-   - Vault static secrets (`vault-approle`)
-3. Install required CLIs (SonarQube, JFrog, Snyk) on Jenkins agent nodes.
-4. Confirm `vault`, `jq`, and `curl` are available on agent nodes.
-
-## Security Best Practices
-
-- All tokens and sensitive data are pulled from Vault — **no hardcoded secrets**.
-- AWS credentials are obtained dynamically using Vault's AWS STS backend.
-- Pipeline fails early on critical issues, enforcing DevSecOps practices.
-
-## Troubleshooting
-
-- Check Jenkins logs for errors if a stage fails.
-- Double-check Vault paths and policies if secrets aren’t retrieved.
-- Ensure your Jira user has API access with the right permissions.
-
-## Optional Enhancements
-
-- Add Slack/MS Teams notification for scan results.
-- Integrate with TruffleHog or Checkov for additional scanning.
-- Replace dummy artifact build with actual build logic.
+This repository contains a Jenkins pipeline designed to automate secure log ingestion, scanning, and artifact handling, with integrations across Vault, SonarQube, Snyk, JFrog, and Jira. It is designed for extensibility, and upcoming enhancements include AWS Athena integration for log querying, and Dead Letter Queues (DLQs) for enhanced fault tolerance in Lambda processing and AWS Security Hub events.
 
 ---
 
-This project is meant to serve as a **template for secure, automated pipelines** following DevSecOps principles.
+## 🔐 Features
 
+- **Secrets Management**: Retrieves credentials and tokens securely using HashiCorp Vault (AppRole).
+- **Code Checkout**: Pulls code from GitHub.
+- **Static Code Analysis**: SonarQube scan with automatic Jira ticket creation for high-severity issues.
+- **IaC Security Scanning**: Snyk scans Infrastructure-as-Code for misconfigurations.
+- **Artifact Creation & Upload**: Simulated artifact creation, uploaded to JFrog Artifactory.
+- **Binary Vulnerability Scanning**: JFrog Xray scan of uploaded artifact.
+- **Jira Integration**: Automatically creates detailed Jira issues for findings.
+- **Planned Enhancements**:
+  - 🧠 **Athena** for log analysis and querying
+  - 🔁 **Dead Letter Queues (DLQs)** for Lambda (log processing failures)
+  - 🛡️ **Security Hub DLQ** for secure triaging of unprocessed findings
+
+---
+
+## 📦 Pipeline Breakdown
+
+### 1. **Vault Secrets**
+- Uses Jenkins' Vault plugin to fetch API tokens for:
+  - SonarQube
+  - Snyk
+  - JFrog
+  - Jira
+  - DAST/ZAP (optional)
+- Assumes secrets are stored under `secret/<toolname>` paths.
+
+### 2. **AWS STS Credentials**
+- Dynamically generates short-lived credentials using Vault’s `aws/creds/<role>` endpoint.
+
+### 3. **Source Checkout**
+- Pulls the main branch from a GitHub repository.
+
+### 4. **Security Scanning**
+- **SonarQube**: Static analysis, auto-raises Jira if CRITICAL/BLOCKER issues found.
+- **Snyk**: IaC scan, with JSON parsing and ticketing.
+- **JFrog Xray**: Scans uploaded artifact, raises Jira for vulnerabilities.
+- *(DASTardly & ZAP commented out but available.)*
+
+### 5. **Artifact Management**
+- Dummy artifact (`test.zip`) is built and pushed to JFrog.
+- Scan metadata is attached via JFrog CLI for traceability.
+
+### 6. **Fail-Fast Security Gate**
+- Pipeline is aborted if any scanner detects high-risk issues.
+
+---
+
+## 🛠️ Prerequisites
+
+- Jenkins with:
+  - Pipeline, Credentials, and HashiCorp Vault plugins
+  - `jq`, `vault`, `curl`, `sonar-scanner`, `snyk`, `jfrog` installed on agents
+- Valid Vault secrets setup and AppRole permissions
+- JFrog CLI and API access set up
+- Jira API access and project key
+
+---
+
+## 🚀 Future Enhancements
+
+| Feature | Description |
+|--------|-------------|
+| **Athena Integration** | Query processed logs via AWS Athena, build dashboards or join across datasets |
+| **Lambda DLQ** | Add SQS DLQ for log-processing Lambda for resilience and traceability |
+| **Security Hub DLQ** | Capture and triage failed events from Security Hub via separate queue for auditing |
+
+---
+
+## 📁 Secrets Structure in Vault
+
+```text
+secret/
+├── aws-creds
+├── sonarqube
+├── snyk
+├── jfrog
+├── jira
+├── dastardly
+└── zap
+```
+
+---
+
+## 🧩 Jira Ticket Format
+
+Tickets auto-created contain:
+- Vulnerability summary
+- Affected file, line, and snippet (if available)
+- CVE / Severity / Fix guidance (if available)
+
+---
+
+## 🧪 Testing
+
+You can test individual scanners by commenting out unrelated stages. For full pipeline simulation:
+```bash
+# Replace with your actual Jenkinsfile location
+jenkins-jobs --conf jenkins.ini update jobs/
+```
+
+---
+
+## 🔒 Security Notes
+
+- All secrets are handled via Vault — no hardcoded tokens.
+- AWS credentials are short-lived (STS) and purged after use.
+- Only essential environment variables are exposed in the shell context.
+
+---
+
+## 📃 License
+
+MIT – free to use, modify, and extend for your secure DevSecOps workflows.
