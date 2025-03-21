@@ -103,12 +103,6 @@ pipeline {
 
         stage('Security Scans') {
             parallel {
-                stage('SonarQube') { ... }
-                stage('Snyk') { ... }
-            }
-        }
-        stage('Security Scans') {
-            parallel {
                 stage('Static Code Analysis (SonarQube)') {
                     steps {
                         script {
