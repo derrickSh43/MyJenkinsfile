@@ -107,83 +107,87 @@ pipeline {
                 stage('Snyk') { ... }
             }
         }
-        stage('Static Code Analysis (SonarQube)') {
-            steps {
-                script {
-                    def scanStatus = sh(script: """
-                        set +x
-                        <sonar-scanner-home>/bin/sonar-scanner \\
-                        -Dsonar.projectKey=<your-project-key> \\
-                        -Dsonar.organization=<your-org> \\
-                        -Dsonar.host.url=${SONARQUBE_URL} \\
-                        -Dsonar.login=${SONAR_TOKEN}
-                    """, returnStatus: true)
-
-                    if (scanStatus != 0) {
-                        def sonarIssuesJson = sh(script: """
-                            set +x
-                            curl -s -u ${SONAR_TOKEN}: \\
-                            "${SONARQUBE_URL}/api/issues/search?componentKeys=<your-project-key>&severities=BLOCKER,CRITICAL&statuses=OPEN" | jq -c '.issues'
-                        """, returnStdout: true).trim()
-
-                        if (sonarIssuesJson && sonarIssuesJson != '[]') {
-                            def sonarIssues = readJSON(text: sonarIssuesJson)
-                            if (sonarIssues.size() > 0) {
-                                def issueDetails = sonarIssues.collect { issue ->
-                                    def filePath = issue.component.split(':').last()
-                                    def line = issue.line ?: 'N/A'
-                                    def snippet = getCodeSnippet(filePath, line)
-                                    "Issue: ${issue.message}\\nFile: ${filePath}\\nLine: ${line}\\nSnippet:\\n${snippet ?: 'Not available'}"
-                                }.join('\\n\\n')
-                                echo "SonarQube issues found - creating JIRA ticket"
-                                createJiraTicket("SonarQube Security Vulnerabilities Detected", issueDetails)
-                                env.SCAN_FAILED = "true"
+        stage('Security Scans') {
+            parallel {
+                stage('Static Code Analysis (SonarQube)') {
+                    steps {
+                        script {
+                            def scanStatus = sh(script: """
+                                set +x
+                                <sonar-scanner-home>/bin/sonar-scanner \\
+                                -Dsonar.projectKey=<your-project-key> \\
+                                -Dsonar.organization=<your-org> \\
+                                -Dsonar.host.url=${SONARQUBE_URL} \\
+                                -Dsonar.login=${SONAR_TOKEN}
+                            """, returnStatus: true)
+        
+                            if (scanStatus != 0) {
+                                def sonarIssuesJson = sh(script: """
+                                    set +x
+                                    curl -s -u ${SONAR_TOKEN}: \\
+                                    "${SONARQUBE_URL}/api/issues/search?componentKeys=<your-project-key>&severities=BLOCKER,CRITICAL&statuses=OPEN" | jq -c '.issues'
+                                """, returnStdout: true).trim()
+        
+                                if (sonarIssuesJson && sonarIssuesJson != '[]') {
+                                    def sonarIssues = readJSON(text: sonarIssuesJson)
+                                    if (sonarIssues.size() > 0) {
+                                        def issueDetails = sonarIssues.collect { issue ->
+                                            def filePath = issue.component.split(':').last()
+                                            def line = issue.line ?: 'N/A'
+                                            def snippet = getCodeSnippet(filePath, line)
+                                            "Issue: ${issue.message}\\nFile: ${filePath}\\nLine: ${line}\\nSnippet:\\n${snippet ?: 'Not available'}"
+                                        }.join('\\n\\n')
+                                        echo "SonarQube issues found - creating JIRA ticket"
+                                        createJiraTicket("SonarQube Security Vulnerabilities Detected", issueDetails)
+                                        env.SCAN_FAILED = "true"
+                                    } else {
+                                        echo "SonarQube scan failed but no BLOCKER/CRITICAL issues found"
+                                    }
+                                } else {
+                                    echo "SonarQube scan failed but no issues returned"
+                                }
                             } else {
-                                echo "SonarQube scan failed but no BLOCKER/CRITICAL issues found"
+                                echo "SonarQube scan completed successfully"
                             }
-                        } else {
-                            echo "SonarQube scan failed but no issues returned"
                         }
-                    } else {
-                        echo "SonarQube scan completed successfully"
                     }
                 }
-            }
-        }
-
-        stage('Snyk Security Scan') {
-            steps {
-                script {
-                    def snykStatus = sh(script: """
-                        set +x
-                        export SNYK_TOKEN=${SNYK_TOKEN}
-                        snyk iac test --json --severity-threshold=low > snyk-results.json 2>&1
-                    """, returnStatus: true)
-
-                    def snykOutput = readFile('snyk-results.json').trim()
-                    if (snykStatus != 0 || (snykOutput && !snykOutput.startsWith('['))) {
-                        echo "Snyk scan failed or produced invalid JSON"
-                        if (snykOutput) {
-                            echo "Snyk output: ${snykOutput}"
-                        }
-                        env.SCAN_FAILED = "true"
-                    } else {
-                        def snykIssuesList = readJSON(file: "snyk-results.json").infrastructureAsCodeIssues ?: []
-                        if (snykIssuesList.size() > 0) {
-                            def issueDetails = snykIssuesList.collect { issue ->
-                                def filePath = issue.filePath ?: 'N/A'
-                                def line = issue.lineNumber ?: 'N/A'
-                                def snippet = getCodeSnippet(filePath, line)
-                                "Issue: ${issue.title}\\nSeverity: ${issue.severity}\\nFile: ${filePath}\\nLine: ${line}\\nImpact: ${issue.impact}\\nResolution: ${issue.resolution}\\nSnippet:\\n${snippet ?: 'Not available'}"
-                            }.join('\\n\\n')
-                            echo "Snyk issues found - creating JIRA ticket"
-                            createJiraTicket("Snyk IaC Security Issues Detected", issueDetails)
-                            env.SCAN_FAILED = "true"
-                        } else {
-                            echo "No Snyk issues detected"
+        
+                stage('Snyk Security Scan') {
+                    steps {
+                        script {
+                            def snykStatus = sh(script: """
+                                set +x
+                                export SNYK_TOKEN=${SNYK_TOKEN}
+                                snyk iac test --json --severity-threshold=low > snyk-results.json 2>&1
+                            """, returnStatus: true)
+        
+                            def snykOutput = readFile('snyk-results.json').trim()
+                            if (snykStatus != 0 || (snykOutput && !snykOutput.startsWith('['))) {
+                                echo "Snyk scan failed or produced invalid JSON"
+                                if (snykOutput) {
+                                    echo "Snyk output: ${snykOutput}"
+                                }
+                                env.SCAN_FAILED = "true"
+                            } else {
+                                def snykIssuesList = readJSON(file: "snyk-results.json").infrastructureAsCodeIssues ?: []
+                                if (snykIssuesList.size() > 0) {
+                                    def issueDetails = snykIssuesList.collect { issue ->
+                                        def filePath = issue.filePath ?: 'N/A'
+                                        def line = issue.lineNumber ?: 'N/A'
+                                        def snippet = getCodeSnippet(filePath, line)
+                                        "Issue: ${issue.title}\\nSeverity: ${issue.severity}\\nFile: ${filePath}\\nLine: ${line}\\nImpact: ${issue.impact}\\nResolution: ${issue.resolution}\\nSnippet:\\n${snippet ?: 'Not available'}"
+                                    }.join('\\n\\n')
+                                    echo "Snyk issues found - creating JIRA ticket"
+                                    createJiraTicket("Snyk IaC Security Issues Detected", issueDetails)
+                                    env.SCAN_FAILED = "true"
+                                } else {
+                                    echo "No Snyk issues detected"
+                                }
+                            }
+                            sh "rm -f snyk-results.json"
                         }
                     }
-                    sh "rm -f snyk-results.json"
                 }
             }
         }
