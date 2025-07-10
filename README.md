@@ -1,4 +1,7 @@
-# Secure Log Ingestion and Analysis Pipeline (Jenkins + Vault + Lambda + JFrog)
+# # End-to-End DevSecOps Pipeline: Jenkins + Vault + Snyk + SonarQube + JFrog + Jira
+
+This repository contains a secure CI/CD pipeline leveraging Vault AppRole, AWS STS, and full-spectrum security scans (IaC, SAST, binary, DAST) with automatic Jira ticketing and artifact promotion.
+
 
 This repository contains a Jenkins pipeline designed to automate secure log ingestion, scanning, and artifact handling, with integrations across Vault, SonarQube, Snyk, JFrog, and Jira. It is designed for extensibility, and upcoming enhancements include AWS Athena integration for log querying, and Dead Letter Queues (DLQs) for enhanced fault tolerance in Lambda processing and AWS Security Hub events.
 
